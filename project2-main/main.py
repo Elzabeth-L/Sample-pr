@@ -1,44 +1,49 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import pymysql
-
-host = "localhost"
-user = "root"
-password = ""
-database = "hospital"
+from typing import Optional
+from db_connect import get_connection, get_connection_without_db, DB_NAME
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def ensure_database_and_table():
     # connect without specifying database to create it if needed
-    conn = pymysql.connect(host=host, user=user, password=password, cursorclass=pymysql.cursors.DictCursor)
+    conn = get_connection_without_db()
     try:
-        with conn.cursor() as cur:
-            cur.execute(f"CREATE DATABASE IF NOT EXISTS {database}")
-        conn.commit()
+        cursor = conn.cursor()
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
+        cursor.close()
     finally:
         conn.close()
 
     # connect to the database and ensure table exists
-    conn = pymysql.connect(host=host, user=user, password=password, database=database, cursorclass=pymysql.cursors.DictCursor)
+    conn = get_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS appointments (
-                  id INT AUTO_INCREMENT PRIMARY KEY,
-                  name VARCHAR(100),
-                  email VARCHAR(100),
-                  phone VARCHAR(20),
-                  date DATE,
-                  time VARCHAR(20),
-                  department VARCHAR(50),
-                  message TEXT
-                )
-                """
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reservations (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              name VARCHAR(100),
+              email VARCHAR(100),
+              phone VARCHAR(20),
+              date DATE,
+              time VARCHAR(20),
+              number_of_guests INT,
+              message TEXT
             )
-        conn.commit()
+            """
+        )
+        cursor.close()
     finally:
         conn.close()
 
@@ -52,26 +57,74 @@ def on_startup():
         print("The app will still run. Start MySQL and retry requests.")
 
 
-class Appointment(BaseModel):
+class Reservation(BaseModel):
     name: str
     email: str
     phone: str
     date: str
     time: str
-    department: str
+    number_of_guests: int
     message: str = ""
 
 
-@app.post("/appointments")
-def create_appointment(a: Appointment):
-    conn = pymysql.connect(host=host, user=user, password=password, database=database, cursorclass=pymysql.cursors.DictCursor)
+@app.post("/reservations")
+def create_reservation(r: Reservation):
+    conn = get_connection()
     try:
-        with conn.cursor() as cur:
-            sql = "INSERT INTO appointments (name,email,phone,date,time,department,message) VALUES (%s,%s,%s,%s,%s,%s,%s)"
-            cur.execute(sql, (a.name, a.email, a.phone, a.date, a.time, a.department, a.message))
-            conn.commit()
+        cursor = conn.cursor()
+        sql = "INSERT INTO reservations (name,email,phone,date,time,number_of_guests,message) VALUES (%s,%s,%s,%s,%s,%s,%s)"
+        cursor.execute(sql, (r.name, r.email, r.phone, r.date, r.time, r.number_of_guests, r.message))
+        cursor.close()
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+
+@app.get("/reservations")
+def get_reservations(page: int = 1, limit: int = 20, search: Optional[str] = None, date: Optional[str] = None):
+    """Return reservations with optional pagination and simple filtering.
+
+    Query params:
+    - page: page number (1-based)
+    - limit: items per page
+    - search: substring to match against `name`
+    - date: exact date (YYYY-MM-DD)
+    """
+    offset = max(page - 1, 0) * max(limit, 1)
+    base_where = []
+    params = []
+    if search:
+        base_where.append("name LIKE %s")
+        params.append(f"%{search}%")
+    if date:
+        base_where.append("date = %s")
+        params.append(date)
+
+    where_clause = ("WHERE " + " AND ".join(base_where)) if base_where else ""
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        # total count
+        count_sql = f"SELECT COUNT(*) as total FROM reservations {where_clause}"
+        cursor.execute(count_sql, params)
+        total = cursor.fetchone().get("total", 0)
+
+        # fetch page
+        data_sql = f"SELECT id, name, email, phone, date, time, number_of_guests, message FROM reservations {where_clause} ORDER BY date DESC, time DESC LIMIT %s OFFSET %s"
+        cursor.execute(data_sql, params + [limit, offset])
+        reservations = cursor.fetchall()
+        cursor.close()
+
+        return {"reservations": reservations, "total": total, "page": page, "limit": limit}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

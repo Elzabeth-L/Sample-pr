@@ -1,0 +1,84 @@
+"""
+Reusable database connection module for Amazon RDS MySQL instance.
+Handles connection management and provides a simple interface for database operations.
+"""
+
+import mysql.connector
+from mysql.connector import Error
+
+# Database connection configuration
+DB_HOST = "elzabeth-db.cvyakmciw3a7.ap-south-1.rds.amazonaws.com"
+DB_PORT = 3306  # Standard MySQL RDS port
+DB_USER = "admin"
+DB_PASSWORD = "DBpassword30"
+DB_NAME = "restaurant"
+
+
+def get_connection():
+    """
+    Create and return a connection to the MySQL database.
+    
+    Returns:
+        mysql.connector.MySQLConnection: A live database connection object.
+        
+    Raises:
+        mysql.connector.Error: If connection fails.
+    """
+    try:
+        conn = mysql.connector.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            autocommit=True
+        )
+        return conn
+    except Error as e:
+        print(f"Error connecting to MySQL Database: {e}")
+        raise
+
+
+def get_connection_without_db():
+    """
+    Create and return a connection without specifying a database.
+    Used for creating databases that don't exist yet.
+    
+    Returns:
+        mysql.connector.MySQLConnection: A live database connection object.
+        
+    Raises:
+        mysql.connector.Error: If connection fails.
+    """
+    try:
+        conn = mysql.connector.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            autocommit=True
+        )
+        return conn
+    except Error as e:
+        print(f"Error connecting to MySQL Database: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    # Test connection with a simple SELECT NOW() query
+    print("Testing database connection...")
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Run test query
+        cursor.execute("SELECT NOW() as current_time")
+        result = cursor.fetchone()
+        print(f"✓ Connection successful!")
+        print(f"  Server time: {result['current_time']}")
+        
+        cursor.close()
+        conn.close()
+        print("✓ Connection closed successfully.")
+    except Exception as e:
+        print(f"✗ Connection failed: {e}")
