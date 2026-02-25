@@ -14,6 +14,8 @@ DB_USER = os.environ.get("DB_USER", "admin")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "DBpassword30")
 DB_NAME = os.environ.get("DB_NAME", "restaurant")
 DB_CONNECT_TIMEOUT = int(os.environ.get("DB_CONNECT_TIMEOUT", 10))
+DB_SSL_CA = os.environ.get("DB_SSL_CA", "/root/global-bundle.pem")  # path to CA bundle, e.g. /home/ubuntu/global-bundle.pem
+DB_SSL_VERIFY_CERT = os.environ.get("DB_SSL_VERIFY_CERT", "true").lower() in ("1", "true", "yes")
 
 
 def get_connection():
@@ -27,6 +29,13 @@ def get_connection():
         mysql.connector.Error: If connection fails.
     """
     try:
+        # Build SSL options only when a CA path is provided
+        ssl_opts = {}
+        if DB_SSL_CA:
+            ssl_opts["ssl_ca"] = DB_SSL_CA
+            # mysql.connector expects ssl_verify_cert to be a boolean
+            ssl_opts["ssl_verify_cert"] = DB_SSL_VERIFY_CERT
+
         conn = mysql.connector.connect(
             host=DB_HOST,
             port=DB_PORT,
@@ -34,7 +43,8 @@ def get_connection():
             password=DB_PASSWORD,
             database=DB_NAME,
             connection_timeout=DB_CONNECT_TIMEOUT,
-            autocommit=True
+            autocommit=True,
+            **ssl_opts
         )
         return conn
     except Error as e:
@@ -54,13 +64,19 @@ def get_connection_without_db():
         mysql.connector.Error: If connection fails.
     """
     try:
+        ssl_opts = {}
+        if DB_SSL_CA:
+            ssl_opts["ssl_ca"] = DB_SSL_CA
+            ssl_opts["ssl_verify_cert"] = DB_SSL_VERIFY_CERT
+
         conn = mysql.connector.connect(
             host=DB_HOST,
             port=DB_PORT,
             user=DB_USER,
             password=DB_PASSWORD,
             connection_timeout=DB_CONNECT_TIMEOUT,
-            autocommit=True
+            autocommit=True,
+            **ssl_opts
         )
         return conn
     except Error as e:
